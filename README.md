@@ -175,7 +175,7 @@ Each email address in this worksheet receives qualifying flight-deal notificatio
 ### 1. Clone the repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/bfite3/FlightTrackerwithPython.git
 cd FlightTrackerwithPython
 ```
 
