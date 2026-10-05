@@ -3,28 +3,74 @@ from flight_data import FlightData
 from flight_search import FlightSearch
 from notification_manager import NotificationManager
 
-data_manager = DataManager()
-flight_data = FlightData()
-flight_search = FlightSearch()
-notification_manager = NotificationManager()
 
-# Get cities from Google Sheet
-data_manager.get_cities()
-# Loop through cities
-for city_dict in data_manager.flight_list:
-    # Get IATA code from flight api
-    iata_code = flight_data.get_iata(city_dict["city"])
-    # If there isn't already an IATA code in the Google Sheet then add it
-    if len(city_dict["iataCode"]) < 1:
-        data_manager.input_iata(id=city_dict["id"], iata=iata_code)
-    # Set this to false, so it can be set to true later on if no direct flight found
-    layover_flight_found = False
-    # Return true if direct flight found else return false
-    direct_flight_found = flight_search.search_direct_flights(fly_to=iata_code, max_price=city_dict["lowestPrice"])
-    # If direct flight found is false then try to find flight with layover
-    if not direct_flight_found:
-        layover_flight_found = flight_search.search_layover_flights(fly_to=iata_code)
-    # If any type of flight was found get the data then email it
-    if direct_flight_found or layover_flight_found:
-        flight_info = flight_search.get_flight_info(layover_flight_found)
-        notification_manager.email_flight_deal(flight_info, layover_flight_found)
+def main() -> None:
+    data_manager = DataManager()
+    flight_data = FlightData()
+    flight_search = FlightSearch()
+    notification_manager = NotificationManager()
+
+    cities = data_manager.get_cities()
+    recipient_emails = data_manager.get_user_emails()
+
+    for row_number, city_record in enumerate(
+        cities,
+        start=2,
+    ):
+        city_name = str(
+            city_record["City"]
+        ).strip()
+
+        try:
+            iata_code = str(
+                city_record["IATACode"]
+            ).strip()
+            max_price = int(
+                city_record["LowestPrice"]
+            )
+
+            if not iata_code:
+                iata_code = flight_data.get_iata(city_name)
+
+                data_manager.input_iata(
+                    row_number=row_number,
+                    iata=iata_code,
+                )
+
+            layover_flight_found = False
+
+            direct_flight_found = (
+                flight_search.search_direct_flights(
+                    fly_to=iata_code,
+                    max_price=max_price,
+                )
+            )
+
+            if not direct_flight_found:
+                layover_flight_found = (
+                    flight_search.search_layover_flights(
+                        fly_to=iata_code,
+                        max_price=max_price,
+                    )
+                )
+
+            if direct_flight_found or layover_flight_found:
+                flight_info = flight_search.get_flight_info(
+                    layover_flight_found
+                )
+
+                notification_manager.email_flight_deal(
+                    flight_info=flight_info,
+                    recipient_emails=recipient_emails,
+                    layover_flight_found=layover_flight_found,
+                )
+
+        except Exception as error:
+            print(
+                f"Error processing {city_name}: "
+                f"{error}"
+            )
+
+
+if __name__ == "__main__":
+    main()

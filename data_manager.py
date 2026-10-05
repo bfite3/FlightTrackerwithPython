@@ -1,29 +1,81 @@
-import requests
+import os
+from typing import Any
 
-SHEETY_ENDPOINT_GET = "https://api.sheety.co/7a6327fc6ea294ff861d1c31744358c7/copyOfFlightDeals/prices"
-SHEETY_ENDPOINT_PUT = "https://api.sheety.co/7a6327fc6ea294ff861d1c31744358c7/copyOfFlightDeals/prices"
+import gspread
+from dotenv import load_dotenv
+from google.oauth2.service_account import Credentials
+
+
+load_dotenv()
+
+GOOGLE_SHEET_ID = os.environ.get("GOOGLE_SHEET_ID")
+GOOGLE_CREDENTIALS_FILE = os.environ.get(
+    "GOOGLE_CREDENTIALS_FILE"
+)
+
+if not GOOGLE_SHEET_ID:
+    raise ValueError(
+        "GOOGLE_SHEET_ID environment variable is not configured."
+    )
+
+if not GOOGLE_CREDENTIALS_FILE:
+    raise ValueError(
+        "GOOGLE_CREDENTIALS_FILE environment variable is not configured."
+    )
 
 
 class DataManager:
-    # This class is responsible for talking to the Google Sheet.
-    def __init__(self):
-        self.sheety_endpoint_get = SHEETY_ENDPOINT_GET
-        self.sheety_endpoint_put = SHEETY_ENDPOINT_PUT
+    """Read and update flight-tracking data in Google Sheets."""
 
-    # This function will get the city name(s) from the Google Sheet
-    def get_cities(self):
-        sheety_response_get = requests.get(url=self.sheety_endpoint_get)
-        sheety_response_get.raise_for_status()
-        flight_data = sheety_response_get.json()
-        self.flight_list = flight_data["prices"]
+    def __init__(self) -> None:
+        scopes: list[str] = [
+            "https://www.googleapis.com/auth/spreadsheets"
+        ]
 
-    # This function will input the IATA code(s) if they aren't already in the Google Sheet
-    def input_iata(self, id, iata):
-        sheety_put_config = {
-            "price": {
-                "iataCode": iata,
-            }
-        }
+        credentials = Credentials.from_service_account_file(
+            GOOGLE_CREDENTIALS_FILE,
+            scopes=scopes,
+        )
 
-        sheety_response_put = requests.put(url=f"{self.sheety_endpoint_put}/{id}", json=sheety_put_config)
-        sheety_response_put.raise_for_status()
+        client = gspread.authorize(credentials)
+
+        self.spreadsheet = client.open_by_key(
+            GOOGLE_SHEET_ID
+        )
+
+        self.prices_worksheet = self.spreadsheet.worksheet(
+            "prices"
+        )
+
+    def get_cities(self) -> list[dict[str, Any]]:
+        """Return destination records from the prices worksheet."""
+
+        return self.prices_worksheet.get_all_records()
+
+    def get_user_emails(self) -> list[str]:
+        """Return recipient email addresses from the users worksheet."""
+
+        users_worksheet = self.spreadsheet.worksheet(
+            "users"
+        )
+
+        user_records = users_worksheet.get_all_records()
+
+        return [
+            str(user_record["Email"]).strip()
+            for user_record in user_records
+            if str(user_record["Email"]).strip()
+        ]
+
+    def input_iata(
+        self,
+        row_number: int,
+        iata: str,
+    ) -> None:
+        """Update the IATA code for a destination row."""
+
+        self.prices_worksheet.update_cell(
+            row_number,
+            2,
+            iata,
+        )
